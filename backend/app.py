@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 
 load_dotenv()
 
@@ -22,8 +22,9 @@ db = SQLAlchemy(app)
 # Configuración de Gemini API
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    client = genai.Client(api_key=GEMINI_API_KEY)
 else:
+    client = None
     print("WARNING: GEMINI_API_KEY no encontrada en las variables de entorno.")
 
 # Modelo SQLAlchemy
@@ -75,7 +76,7 @@ def procesar_gasto():
     
     texto = data['texto']
     
-    if not GEMINI_API_KEY:
+    if not client:
          return jsonify({"error": "La API Key de Gemini no está configurada en el servidor."}), 500
 
     try:
@@ -94,8 +95,10 @@ def procesar_gasto():
         Texto del usuario: "{texto}"
         """
         
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
         content = response.text.strip()
         
         # Limpieza de markdown para seguridad
@@ -137,6 +140,19 @@ def obtener_gastos():
         return jsonify([g.to_dict() for g in gastos]), 200
     except Exception as e:
         return jsonify({"error": "Error al obtener los gastos.", "detalle": str(e)}), 500
+
+@app.route('/api/estadisticas', methods=['GET'])
+def obtener_estadisticas():
+    try:
+        resultados = db.session.query(
+            Gasto.categoria, 
+            db.func.sum(Gasto.monto).label('total')
+        ).group_by(Gasto.categoria).all()
+        
+        datos = [{"categoria": r.categoria, "total": float(r.total)} for r in resultados]
+        return jsonify(datos), 200
+    except Exception as e:
+        return jsonify({"error": "Error al obtener estadísticas.", "detalle": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

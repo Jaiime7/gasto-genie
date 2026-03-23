@@ -1,5 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { Doughnut } from 'vue-chartjs'
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
+
+ChartJS.register(ArcElement, Tooltip, Legend)
 
 const textoGasto = ref('')
 const cargandoProceso = ref(false)
@@ -8,6 +12,35 @@ const errorMensaje = ref('')
 const exitoMensaje = ref('')
 const gastoExtraido = ref(null)
 const tablaGastos = ref([])
+const chartData = ref({
+  labels: [],
+  datasets: [{
+    backgroundColor: ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'],
+    data: []
+  }]
+})
+const chartOptions = ref({
+  responsive: true,
+  maintainAspectRatio: false
+})
+
+const cargarEstadisticas = async () => {
+  try {
+    const res = await fetch('http://localhost:5000/api/estadisticas')
+    if (res.ok) {
+      const data = await res.json()
+      chartData.value = {
+        labels: data.map(d => d.categoria),
+        datasets: [{
+          backgroundColor: ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'],
+          data: data.map(d => d.total)
+        }]
+      }
+    }
+  } catch (error) {
+    console.error('Error cargando estadísticas:', error)
+  }
+}
 
 const cargarGastos = async () => {
   try {
@@ -82,6 +115,7 @@ const guardarGasto = async () => {
     textoGasto.value = ''
     
     await cargarGastos()
+    await cargarEstadisticas()
 
   } catch (err) {
     errorMensaje.value = err.message
@@ -92,6 +126,7 @@ const guardarGasto = async () => {
 
 onMounted(() => {
   cargarGastos()
+  cargarEstadisticas()
 })
 </script>
 
@@ -196,13 +231,17 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- Tabla de Gastos -->
+      <!-- Dashboard y Tabla de Gastos -->
       <section class="glass-card">
         <div class="history-header">
-          <h2 class="history-title">Historial Reciente</h2>
+          <h2 class="history-title">Dashboard & Historial</h2>
           <span class="badge">{{ tablaGastos.length }} registros</span>
         </div>
         
+        <div class="dashboard-wrapper" v-if="chartData.labels.length > 0" style="height: 300px; margin-bottom: 2rem; position: relative;">
+          <Doughnut :data="chartData" :options="chartOptions" />
+        </div>
+
         <div class="table-responsive">
           <table class="gastos-table">
             <thead>
