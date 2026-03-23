@@ -115,6 +115,34 @@ class GastoFijo(db.Model):
         self.categoria = categoria
         self.pagado = pagado
 
+class ObjetivoAhorro(db.Model):
+    __tablename__ = 'objetivos_ahorro'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False)
+    meta_monto = db.Column(db.Float, nullable=False)
+    monto_actual = db.Column(db.Float, nullable=False, default=0.0)
+    fecha_limite = db.Column(db.Date, nullable=True)
+
+    def __init__(self, nombre, meta_monto, monto_actual=0.0, fecha_limite=None):
+        self.nombre = nombre
+        self.meta_monto = meta_monto
+        self.monto_actual = monto_actual
+        if isinstance(fecha_limite, str) and fecha_limite:
+            self.fecha_limite = datetime.strptime(fecha_limite, '%Y-%m-%d').date()
+        else:
+            self.fecha_limite = fecha_limite
+
+    def to_dict(self):
+        pct = round((self.monto_actual / self.meta_monto) * 100, 1) if self.meta_monto > 0 else 0
+        return {
+            "id": self.id,
+            "nombre": self.nombre,
+            "meta_monto": self.meta_monto,
+            "monto_actual": self.monto_actual,
+            "fecha_limite": self.fecha_limite.strftime('%Y-%m-%d') if self.fecha_limite else None,
+            "porcentaje": min(pct, 100)
+        }
+
 # Inicializar Base de Datos (en un caso de uso real se usaría Flask-Migrate)
 with app.app_context():
     try:
@@ -333,6 +361,19 @@ def actualizar_ingreso(id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
+@app.route('/api/ingresos/<int:id>', methods=['DELETE'])
+def eliminar_ingreso(id):
+    try:
+        ingreso = db.session.get(Ingreso, id)
+        if not ingreso:
+            return jsonify({"error": "Ingreso no encontrado."}), 404
+        db.session.delete(ingreso)
+        db.session.commit()
+        return jsonify({"mensaje": "Ingreso eliminado."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/presupuestos/<int:id>', methods=['PUT'])
 def actualizar_presupuesto(id):
     try:
@@ -347,6 +388,19 @@ def actualizar_presupuesto(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
+
+@app.route('/api/presupuestos/<int:id>', methods=['DELETE'])
+def eliminar_presupuesto(id):
+    try:
+        p = db.session.get(Presupuesto, id)
+        if not p:
+            return jsonify({"error": "Presupuesto no encontrado."}), 404
+        db.session.delete(p)
+        db.session.commit()
+        return jsonify({"mensaje": "Presupuesto eliminado."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/fijos/<int:id>', methods=['PUT'])
 def actualizar_fijo(id):
@@ -364,6 +418,19 @@ def actualizar_fijo(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
+
+@app.route('/api/fijos/<int:id>', methods=['DELETE'])
+def eliminar_fijo_v2(id):
+    try:
+        f = db.session.get(GastoFijo, id)
+        if not f:
+            return jsonify({"error": "Gasto fijo no encontrado."}), 404
+        db.session.delete(f)
+        db.session.commit()
+        return jsonify({"mensaje": "Gasto fijo eliminado."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/chat', methods=['POST'])
 def chat_financiero():
@@ -487,7 +554,7 @@ def gestionar_presupuestos():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/fijos', methods=['POST', 'GET', 'DELETE'])
+@app.route('/api/fijos', methods=['POST', 'GET'])
 def gestionar_fijos():
     if request.method == 'POST':
         data = request.get_json(silent=True)
@@ -505,19 +572,6 @@ def gestionar_fijos():
             db.session.rollback()
             print(f"Error guardando gasto fijo: {e}")
             return jsonify({"error": "Error al guardar el gasto fijo.", "detalle": str(e)}), 400
-
-    if request.method == 'DELETE':
-        id_fijo = request.args.get('id')
-        try:
-            fijo = db.session.get(GastoFijo, int(id_fijo))
-            if not fijo:
-                return jsonify({"error": "No encontrado"}), 404
-            db.session.delete(fijo)
-            db.session.commit()
-            return jsonify({"mensaje": "Gasto fijo eliminado"}), 200
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({"error": str(e)}), 500
 
     # GET
     try:
@@ -564,6 +618,175 @@ def resumen_financiero():
         })
     except Exception as e:
         print(f"Error en resumen_financiero: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/objetivos', methods=['GET', 'POST'])
+def gestionar_objetivos():
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        try:
+            obj = ObjetivoAhorro(
+                nombre=data.get('nombre', 'Mi Objetivo'),
+                meta_monto=float(data.get('meta_monto', 0)),
+                monto_actual=float(data.get('monto_actual', 0)),
+                fecha_limite=data.get('fecha_limite')
+            )
+            db.session.add(obj)
+            db.session.commit()
+            return jsonify(obj.to_dict()), 201
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 400
+    try:
+        objetivos = ObjetivoAhorro.query.all()
+        return jsonify([o.to_dict() for o in objetivos])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/objetivos/<int:id>', methods=['PUT', 'DELETE'])
+def gestionar_objetivo(id):
+    obj = db.session.get(ObjetivoAhorro, id)
+    if not obj:
+        return jsonify({"error": "Objetivo no encontrado."}), 404
+    if request.method == 'DELETE':
+        try:
+            db.session.delete(obj)
+            db.session.commit()
+            return jsonify({"mensaje": "Objetivo eliminado."}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+    # PUT — abonar o editar
+    data = request.get_json(silent=True) or {}
+    try:
+        if 'nombre' in data:      obj.nombre = data['nombre']
+        if 'meta_monto' in data:  obj.meta_monto = float(data['meta_monto'])
+        if 'monto_actual' in data: obj.monto_actual = float(data['monto_actual'])
+        if 'fecha_limite' in data and data['fecha_limite']:
+            obj.fecha_limite = datetime.strptime(data['fecha_limite'], '%Y-%m-%d').date()
+        db.session.commit()
+        return jsonify(obj.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/historico_mensual', methods=['GET'])
+def historico_mensual():
+    """Devuelve ingresos y gastos agregados por mes (últimos 5 meses)."""
+    try:
+        from datetime import date
+        hoy = date.today()
+        meses = []
+        for i in range(4, -1, -1):
+            mes = (hoy.month - i - 1) % 12 + 1
+            anio = hoy.year - ((hoy.month - i - 1) // 12)
+            meses.append((anio, mes))
+
+        resultado = []
+        for anio, mes in meses:
+            gastos_mes = db.session.query(db.func.sum(Gasto.monto)).filter(
+                db.extract('year', Gasto.fecha) == anio,
+                db.extract('month', Gasto.fecha) == mes
+            ).scalar() or 0
+
+            ingresos_mes = db.session.query(db.func.sum(Ingreso.monto)).filter(
+                db.extract('year', Ingreso.fecha) == anio,
+                db.extract('month', Ingreso.fecha) == mes
+            ).scalar() or 0
+
+            resultado.append({
+                "mes": f"{mes:02d}/{anio}",
+                "gastos": float(gastos_mes),
+                "ingresos": float(ingresos_mes)
+            })
+        return jsonify(resultado), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/analisis_avanzado', methods=['GET'])
+def analisis_avanzado():
+    """Análisis financiero avanzado con IA: predicción, gastos hormiga y consejos."""
+    if not client:
+        return jsonify({"error": "Gemini API Key no configurada."}), 500
+    try:
+        hoy = datetime.now()
+        mes_actual = hoy.month
+        anio_actual = hoy.year
+        dias_transcurridos = hoy.day
+        dias_en_mes = 31  # Aproximación conservadora
+
+        # Gastos del mes actual
+        gastos_mes = Gasto.query.filter(
+            db.extract('year', Gasto.fecha) == anio_actual,
+            db.extract('month', Gasto.fecha) == mes_actual
+        ).all()
+        total_gastado_mes = sum(g.monto for g in gastos_mes)
+
+        # Ingresos del mes actual
+        total_ingresos_mes = db.session.query(db.func.sum(Ingreso.monto)).filter(
+            db.extract('year', Ingreso.fecha) == anio_actual,
+            db.extract('month', Ingreso.fecha) == mes_actual
+        ).scalar() or 0
+
+        # Proyección de gasto a fin de mes
+        ritmo_diario = total_gastado_mes / dias_transcurridos if dias_transcurridos > 0 else 0
+        proyeccion_fin_mes = ritmo_diario * dias_en_mes
+
+        # Gastos hormiga: monto <= 10€ y comercio repetido >= 3 veces (todos los tiempos)
+        from collections import Counter
+        todos_gastos = Gasto.query.all()
+        pequenos = [g for g in todos_gastos if g.monto <= 10]
+        conteo = Counter(g.comercio for g in pequenos)
+        hormiga = [{"comercio": c, "veces": n, "monto_unitario": next(g.monto for g in pequenos if g.comercio == c), "ahorro_anual": next(g.monto for g in pequenos if g.comercio == c) * n * 12 / max(len(todos_gastos)//12, 1)} for c, n in conteo.items() if n >= 3]
+
+        # Objetivos de ahorro
+        objetivos = ObjetivoAhorro.query.all()
+        lista_objetivos = "\n".join([f"- {o.nombre}: {o.monto_actual}/{o.meta_monto}€ ({o.to_dict()['porcentaje']}%)" for o in objetivos]) or "Sin objetivos definidos."
+
+        prompt = f"""
+        Eres GastoGenie, un analista financiero experto. Analiza estos datos y genera un JSON con exactamente estas 3 claves:
+
+        DATOS:
+        - Mes actual: {hoy.strftime('%B %Y')}
+        - Días transcurridos: {dias_transcurridos}/{dias_en_mes}
+        - Total gastado este mes: {total_gastado_mes:.2f}€
+        - Ingresos este mes: {float(total_ingresos_mes):.2f}€
+        - Ritmo diario de gasto: {ritmo_diario:.2f}€/día
+        - Proyección de gasto a fin de mes: {proyeccion_fin_mes:.2f}€
+        - Gastos hormiga identificados: {hormiga}
+        - Objetivos de ahorro: {lista_objetivos}
+
+        Genera SOLO un JSON válido (sin markdown) con esta estructura exacta:
+        {{
+            "prediccion": "Texto conciso de 2-3 frases sobre la predicción del saldo a fin de mes.",
+            "gastos_hormiga": "Texto identificando los gastos hormiga más impactantes y el ahorro potencial anual.",
+            "consejo_ahorro": "Un consejo motivador y específico sobre los objetivos de ahorro activos."
+        }}
+        """
+
+        response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+        content = response.text.strip()
+        if content.startswith('```json'): content = content[7:-3].strip()
+        elif content.startswith('```'):  content = content[3:-3].strip()
+
+        ai_data = {}
+        try:
+            ai_data = json.loads(content)
+        except Exception:
+            ai_data = {"prediccion": content, "gastos_hormiga": "", "consejo_ahorro": ""}
+
+        return jsonify({
+            "mes": hoy.strftime('%B %Y'),
+            "total_gastado_mes": float(total_gastado_mes),
+            "total_ingresos_mes": float(total_ingresos_mes),
+            "proyeccion_fin_mes": float(proyeccion_fin_mes),
+            "gastos_hormiga_raw": hormiga,
+            "prediccion": ai_data.get("prediccion", ""),
+            "gastos_hormiga": ai_data.get("gastos_hormiga", ""),
+            "consejo_ahorro": ai_data.get("consejo_ahorro", "")
+        }), 200
+    except Exception as e:
+        print(f"Error en analisis_avanzado: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/estadisticas', methods=['GET'])

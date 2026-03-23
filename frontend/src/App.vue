@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Doughnut } from 'vue-chartjs'
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
+import { Doughnut, Bar } from 'vue-chartjs'
+import { Chart as ChartJS, ArcElement, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js'
 
-ChartJS.register(ArcElement, Tooltip, Legend)
+ChartJS.register(ArcElement, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
 
 const textoGasto = ref('')
 const cargandoProceso = ref(false)
@@ -476,7 +476,7 @@ const guardarFijo = async () => {
 
 const eliminarFijo = async (id) => {
   try {
-    const res = await fetch(`http://localhost:5000/api/fijos?id=${id}`, { method: 'DELETE' })
+    const res = await fetch(`http://localhost:5000/api/fijos/${id}`, { method: 'DELETE' })
     if (!res.ok) {
       const data = await res.json()
       console.error('[eliminarFijo] Error del servidor:', data)
@@ -515,11 +515,127 @@ const guardarPresupuesto = async () => {
   }
 }
 
-onMounted(() => {
+// Estados para Fase 11: Savings Goals & Análisis IA
+const objetivos = ref([])
+const historicoMensual = ref([])
+const analisisIA = ref(null)
+const cargandoAnalisis = ref(false)
+const nuevoObjetivo = ref({ nombre: '', meta_monto: 0, fecha_limite: '' })
+
+const cargarObjetivos = async () => {
+  try {
+    const res = await fetch('http://localhost:5000/api/objetivos')
+    objetivos.value = await res.json()
+  } catch (e) { console.error('Error objetivos:', e) }
+}
+
+const cargarHistorico = async () => {
+  try {
+    const res = await fetch('http://localhost:5000/api/historico_mensual')
+    historicoMensual.value = await res.json()
+  } catch (e) { console.error('Error historico:', e) }
+}
+
+const cargarAnalisisAvanzado = async () => {
+  cargandoAnalisis.value = true
+  try {
+    const res = await fetch('http://localhost:5000/api/analisis_avanzado')
+    analisisIA.value = await res.json()
+  } catch (e) { console.error('Error analisis:', e) }
+  finally { cargandoAnalisis.value = false }
+}
+
+const crearObjetivo = async () => {
+  try {
+    const res = await fetch('http://localhost:5000/api/objetivos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(nuevoObjetivo.value)
+    })
+    if (res.ok) {
+      cargarObjetivos()
+      nuevoObjetivo.value = { nombre: '', meta_monto: 0, fecha_limite: '' }
+    }
+  } catch (e) { console.error('Error crear objetivo:', e) }
+}
+
+const abonarObjetivo = async (id, montoActual) => {
+  const abono = prompt('¿Cuánto quieres añadir a este objetivo?', '10')
+  if (!abono || isNaN(abono)) return
+  
+  try {
+    await fetch(`http://localhost:5000/api/objetivos/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monto_actual: montoActual + parseFloat(abono) })
+    })
+    cargarObjetivos()
+  } catch (e) { console.error('Error abono:', e) }
+}
+
+const eliminarObjetivo = async (id) => {
+  if (!confirm('¿Seguro que quieres eliminar este objetivo?')) return
+  try {
+    await fetch(`http://localhost:5000/api/objetivos/${id}`, { method: 'DELETE' })
+    cargarObjetivos()
+  } catch (e) { console.error('Error eliminar objetivo:', e) }
+}
+
+const eliminarIngreso = async (id) => {
+  if (!confirm('¿Seguro que quieres eliminar este ingreso?')) return
+  try {
+    const res = await fetch(`http://localhost:5000/api/ingresos/${id}`, { method: 'DELETE' })
+    if (res.ok) await cargarPlanificacion()
+  } catch (e) { console.error('Error eliminar ingreso:', e) }
+}
+
+const eliminarPresupuesto = async (id) => {
+  if (!confirm('¿Seguro que quieres eliminar este presupuesto?')) return
+  try {
+    const res = await fetch(`http://localhost:5000/api/presupuestos/${id}`, { method: 'DELETE' })
+    if (res.ok) await cargarPlanificacion()
+  } catch (e) { console.error('Error eliminar presupuesto:', e) }
+}
+
+const chartDataMensual = computed(() => {
+  return {
+    labels: historicoMensual.value.map(h => h.mes),
+    datasets: [
+      {
+        label: 'Ingresos',
+        backgroundColor: '#10b981',
+        data: historicoMensual.value.map(h => h.ingresos)
+      },
+      {
+        label: 'Gastos',
+        backgroundColor: '#ef4444',
+        data: historicoMensual.value.map(h => h.gastos)
+      }
+    ]
+  }
+})
+
+const chartOptionsBar = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }
+  },
+  scales: {
+    padding: { bottom: 10 }
+  }
+}
+
+const onMountedTasks = async () => {
   cargarGastos()
   cargarEstadisticas()
   cargarPlanificacion()
-})
+  cargarObjetivos()
+  cargarHistorico()
+  cargarAnalisisAvanzado()
+}
+
+onMounted(onMountedTasks)
 </script>
 
 <template>
@@ -575,7 +691,10 @@ onMounted(() => {
                     <span style="font-weight: 600;">{{ i.fuente }}</span>
                     <span :style="privacyStyle" style="margin-left: 0.5rem; color: var(--success);">+{{ i.monto }}€</span>
                   </div>
-                  <button @click="abrirEdicion(i, 'ingreso')" style="border: none; background: none; cursor: pointer;" title="Editar">✏️</button>
+                  <div style="display: flex; gap: 0.3rem;">
+                    <button @click="abrirEdicion(i, 'ingreso')" style="border: none; background: none; cursor: pointer;" title="Editar">✏️</button>
+                    <button @click="eliminarIngreso(i.id)" style="border: none; background: none; cursor: pointer;">❌</button>
+                  </div>
                 </div>
               </div>
             </section>
@@ -605,11 +724,46 @@ onMounted(() => {
                 <input type="number" v-model="nuevoPresupuesto.monto_limit" placeholder="Límite €" class="form-input">
                 <button @click="guardarPresupuesto" class="btn btn-primary btn-sm">Establecer Límite</button>
               </div>
+              <!-- Lista de presupuestos -->
+              <div v-if="presupuestos.length > 0" style="margin-top: 1rem;">
+                <div v-for="p in presupuestos" :key="p.id" style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; padding: 0.4rem; background: rgba(0,0,0,0.05); border-radius: 4px; margin-bottom: 0.3rem;">
+                  <span>{{ p.categoria }}: <b>{{ p.monto_limite }}€</b></span>
+                  <div style="display: flex; gap: 0.3rem;">
+                    <button @click="abrirEdicion(p, 'presupuesto')" style="border: none; background: none; cursor: pointer;" title="Editar">✏️</button>
+                    <button @click="eliminarPresupuesto(p.id)" style="border: none; background: none; cursor: pointer;">❌</button>
+                  </div>
+                </div>
+              </div>
             </section>
-          </div>
 
-          <!-- Asistente Financiero (Chat) -->
-          <section v-else class="glass-card">
+            <!-- Objetivos de Ahorro -->
+            <section class="glass-card">
+              <h3 style="font-size: 1rem; margin-bottom: 1rem;">🏆 Objetivos de Ahorro</h3>
+              <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+                <input type="text" v-model="nuevoObjetivo.nombre" placeholder="Nombre (ej. Viaje Japón)" class="form-input" />
+                <input type="number" v-model="nuevoObjetivo.meta_monto" placeholder="Meta €" class="form-input" />
+                <input type="date" v-model="nuevoObjetivo.fecha_limite" class="form-input" />
+                <button @click="crearObjetivo" class="btn btn-primary btn-sm">Crear Objetivo</button>
+              </div>
+              <div v-for="obj in objetivos" :key="obj.id" style="font-size: 0.85rem; padding: 0.6rem; background: rgba(59, 130, 246, 0.1); border-radius: 8px; margin-bottom: 0.5rem; border-left: 3px solid #3b82f6;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                  <span style="font-weight: 700;">{{ obj.nombre }}</span>
+                  <div style="display: flex; gap: 0.3rem;">
+                    <button @click="abonarObjetivo(obj.id, obj.monto_actual)" style="border: none; background: none; cursor: pointer;" title="Abonar">💰</button>
+                    <button @click="eliminarObjetivo(obj.id)" style="border: none; background: none; cursor: pointer;" title="Eliminar">❌</button>
+                  </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem;">
+                  <span>{{ obj.monto_actual }}€ / {{ obj.meta_monto }}€</span>
+                  <span>{{ obj.porcentaje }}%</span>
+                </div>
+                <div style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                  <div :style="{ width: obj.porcentaje + '%' }" style="height: 100%; background: #3b82f6; transition: width 0.5s ease;"></div>
+                </div>
+              </div>
+            </section>
+          </div><section v-else class="glass-card">
+            <!-- Asistente Financiero (Chat) -->
             <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
               <span style="font-size: 2.2rem; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));">🧞‍♂️</span>
               <h2 style="margin: 0; font-size: 1.3rem; color: #1f2937; font-weight: 800;">Genie Insights</h2>
@@ -719,6 +873,34 @@ onMounted(() => {
               <div class="stat-value" :style="privacyStyle" :class="{ 'text-error': resumen.balance_final < 0 }">{{ resumen.balance_final.toFixed(2) }} <span class="stat-unit">EUR</span></div>
             </div>
           </div>
+          
+          <!-- Widget Predictor IA (Genie Analysis) -->
+          <section v-if="analisisIA" class="glass-card" style="margin-bottom: 2rem; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(236, 72, 153, 0.1)); border: 1px solid rgba(139, 92, 246, 0.3); position: relative; overflow: hidden;">
+            <div style="position: absolute; top: -20px; right: -20px; font-size: 5rem; opacity: 0.05; transform: rotate(15deg);">🧞‍♂️</div>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+              <h2 style="margin: 0; font-size: 1.1rem; font-weight: 800; color: #4f46e5; display: flex; align-items: center; gap: 0.5rem;">
+                🔮 Genie Analysis <span style="font-size: 0.75rem; background: #4f46e5; color: white; padding: 2px 6px; border-radius: 4px; font-weight: 500;">AI</span>
+              </h2>
+              <button @click="cargarAnalisisAvanzado" :disabled="cargandoAnalisis" class="btn btn-outline btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">
+                {{ cargandoAnalisis ? '...' : 'Recalcular 🔄' }}
+              </button>
+            </div>
+            
+            <div class="analysis-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
+              <div>
+                <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;">Predicción a Fin de Mes</h4>
+                <p style="font-size: 0.9rem; line-height: 1.5; color: #374151;">{{ analisisIA.prediccion }}</p>
+              </div>
+              <div>
+                <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;">Gastos Hormiga 🐜</h4>
+                <p style="font-size: 0.9rem; line-height: 1.5; color: #374151;">{{ analisisIA.gastos_hormiga }}</p>
+              </div>
+              <div>
+                <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;">Consejo Genie</h4>
+                <p style="font-size: 0.9rem; line-height: 1.5; color: #4f46e5; font-style: italic; font-weight: 500;">"{{ analisisIA.consejo_ahorro }}"</p>
+              </div>
+            </div>
+          </section>
 
           <!-- Presupuestos: Progreso -->
           <section v-if="presupuestos.length > 0" class="glass-card" style="margin-bottom: 1.5rem;">
@@ -743,15 +925,30 @@ onMounted(() => {
             </div>
           </section>
 
-          <!-- Gráfico -->
-          <section class="glass-card" style="margin-bottom: 2rem;">
-            <div class="dashboard-wrapper" v-if="chartData.labels.length > 0" style="height: 250px; position: relative;" :style="privacyStyle">
-              <Doughnut :data="chartData" :options="chartOptions" />
-            </div>
-            <div v-else class="empty-state" style="padding: 1rem;">
-               <p>Añade gastos para ver el gráfico</p>
-            </div>
-          </section>
+          <!-- Gráficos -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+            <!-- Gastos por Categoría -->
+            <section class="glass-card">
+              <h2 style="font-size: 0.9rem; margin-bottom: 1rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Distribución de Gastos</h2>
+              <div class="dashboard-wrapper" v-if="chartData.labels.length > 0" style="height: 220px; position: relative;" :style="privacyStyle">
+                <Doughnut :data="chartData" :options="chartOptions" />
+              </div>
+              <div v-else style="height: 220px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.8rem;">
+                Añade gastos para ver la distribución
+              </div>
+            </section>
+
+            <!-- Comparativa Mensual -->
+            <section class="glass-card">
+              <h2 style="font-size: 0.9rem; margin-bottom: 1rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Ingresos vs Gastos</h2>
+              <div class="dashboard-wrapper" style="height: 220px; position: relative;" :style="privacyStyle">
+                <Bar v-if="historicoMensual.length > 0" :data="chartDataMensual" :options="chartOptionsBar" />
+                <div v-else style="height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.8rem;">
+                  Necesitas datos de varios meses
+                </div>
+              </div>
+            </section>
+          </div>
 
           <!-- Tabla de Gastos -->
           <section class="glass-card">
