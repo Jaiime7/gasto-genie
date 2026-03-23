@@ -10,7 +10,7 @@ from google import genai
 
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__)  # trigger restart
 # CORS permite que el frontend (Vue) se comunique con este backend
 CORS(app)
 
@@ -133,14 +133,16 @@ class ObjetivoAhorro(db.Model):
             self.fecha_limite = fecha_limite
 
     def to_dict(self):
-        pct = round((self.monto_actual / self.meta_monto) * 100, 1) if self.meta_monto > 0 else 0
+        monto = float(self.monto_actual)
+        meta = float(self.meta_monto)
+        pct = round(monto / meta * 100, 1) if meta > 0 else 0.0
         return {
             "id": self.id,
             "nombre": self.nombre,
             "meta_monto": self.meta_monto,
             "monto_actual": self.monto_actual,
             "fecha_limite": self.fecha_limite.strftime('%Y-%m-%d') if self.fecha_limite else None,
-            "porcentaje": min(pct, 100)
+            "porcentaje": min(pct, 100.0)
         }
 
 # Inicializar Base de Datos (en un caso de uso real se usaría Flask-Migrate)
@@ -194,7 +196,7 @@ def escanear_recibo():
             """
             
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-flash-latest',
                 contents=[uploaded_file, prompt]
             )
             content = response.text.strip()
@@ -247,7 +249,7 @@ def procesar_gasto():
         """
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-flash-latest',
             contents=prompt
         )
         content = response.text.strip()
@@ -487,7 +489,7 @@ def chat_financiero():
         """
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-flash-latest',
             contents=prompt
         )
         return jsonify({"respuesta": response.text.strip()}), 200
@@ -606,7 +608,7 @@ def resumen_financiero():
         balance_final = total_ingresos - total_gastos
 
         # Calcula porcentaje gastado respecto al total de ingresos
-        pct_gastado = round((total_gastos / total_ingresos * 100), 1) if total_ingresos > 0 else 0
+        pct_gastado = round(float(total_gastos / total_ingresos * 100), 1) if total_ingresos > 0 else 0
 
         return jsonify({
             "total_ingresos": float(total_ingresos),
@@ -764,7 +766,7 @@ def analisis_avanzado():
         }}
         """
 
-        response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+        response = client.models.generate_content(model='gemini-flash-latest', contents=prompt)
         content = response.text.strip()
         if content.startswith('```json'): content = content[7:-3].strip()
         elif content.startswith('```'):  content = content[3:-3].strip()

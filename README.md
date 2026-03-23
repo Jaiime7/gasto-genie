@@ -92,4 +92,4 @@ npm run dev
 ## 📧 Contact & Portfolio
 This project was developed as a showcase of Full-Stack craftsmanship, AI integration, and user-centric design. 
 
-**Developed with ❤️ by [Your Name/Jaiime7]**
+**Developed with ❤️ by @jaiimessoto**

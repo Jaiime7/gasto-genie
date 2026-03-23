@@ -621,7 +621,7 @@ const chartOptionsBar = {
   plugins: {
     legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }
   },
-  scales: {
+  layout: {
     padding: { bottom: 10 }
   }
 }
