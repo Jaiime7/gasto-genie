@@ -13,8 +13,8 @@ app = Flask(__name__)
 # CORS permite que el frontend (Vue) se comunique con este backend
 CORS(app)
 
-# Configuración de la base de datos PostgreSQL
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/gastogenie')
+# Configuración de la base de datos (SQLite por defecto para que funcione sin configurar PostgreSQL)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///gastogenie.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
