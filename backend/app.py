@@ -767,15 +767,18 @@ def analisis_avanzado():
         """
 
         response = client.models.generate_content(model='gemini-flash-latest', contents=prompt)
+        import re
         content = response.text.strip()
-        if content.startswith('```json'): content = content[7:-3].strip()
-        elif content.startswith('```'):  content = content[3:-3].strip()
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            content = json_match.group(0)
 
         ai_data = {}
         try:
             ai_data = json.loads(content)
-        except Exception:
-            ai_data = {"prediccion": content, "gastos_hormiga": "", "consejo_ahorro": ""}
+        except Exception as e:
+            print(f"AI JSON Parse Error: {e}, Content: {content}")
+            ai_data = {"prediccion": content[:200], "gastos_hormiga": "No se pudo analizar", "consejo_ahorro": "Sigue ahorrando"}
 
         return jsonify({
             "mes": hoy.strftime('%B %Y'),
